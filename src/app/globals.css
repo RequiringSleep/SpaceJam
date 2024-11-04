@@ -1,0 +1,8 @@
+/* src/app/globals.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+    @apply bg-gradient-to-b from-slate-900 via-black to-gray-900;
+}
