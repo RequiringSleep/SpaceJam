@@ -1,6 +1,6 @@
+# sound_manager.py
 import pygame
 import numpy as np
-from collections import defaultdict
 
 class SoundManager:
     def __init__(self):
@@ -10,183 +10,283 @@ class SoundManager:
         self.active_sounds = {}  # Track which planet sounds are currently playing
         self.volume = 0.5
         
-        # Define different instrument types with unique characteristics
-        self.instruments = {
+        # Musical constants
+        self.root_note = 220.0  # A3
+        self.scale = self._generate_scale('minor')  # Scale frequencies
+        self.bpm = 120
+        self.beat_length = 60000 / self.bpm  # milliseconds per beat
+        self.beat_count = 0
+        self.last_beat_time = 0
+        
+        # Sound characteristics for each type
+        self.sound_types = {
             'bass': {
-                'base_freq': 65.41,  # C2
+                'base_freq': self.root_note / 2,  # One octave down
                 'waveform': 'sine',
-                'harmonics': [1.0, 0.5, 0.25],  # Fundamental + overtones
-                'envelope': {'attack': 0.1, 'decay': 0.2, 'sustain': 0.7, 'release': 0.3},
-                'rhythm': [1, 0, 0, 1, 0, 0, 1, 0]  # Basic rhythm pattern
+                'harmonics': [1.0, 0.5, 0.25, 0.125],
+                'envelope': {
+                    'attack': 0.1,
+                    'decay': 0.2,
+                    'sustain': 0.8,
+                    'release': 0.3
+                },
+                'rhythm': [1, 0, 0.5, 0, 1, 0, 0.5, 0],  # Bass rhythm pattern
+                'filter_freq': 500,
+                'resonance': 2.0
             },
-            'pad': {
-                'base_freq': 261.63,  # C4
-                'waveform': 'sine',
-                'mod_freq': 5.0,  # Modulation frequency
-                'mod_depth': 3.0,
-                'envelope': {'attack': 0.3, 'decay': 0.4, 'sustain': 0.8, 'release': 0.5}
-            },
-            'pluck': {
-                'base_freq': 523.25,  # C5
+            'melody': {
+                'base_freq': self.root_note * 2,  # One octave up
                 'waveform': 'triangle',
-                'decay_factor': 8.0,
-                'envelope': {'attack': 0.05, 'decay': 0.1, 'sustain': 0.3, 'release': 0.1},
-                'rhythm': [1, 1, 0, 1, 1, 0, 1, 0]
+                'harmonics': [1.0, 0.3, 0.15],
+                'envelope': {
+                    'attack': 0.05,
+                    'decay': 0.1,
+                    'sustain': 0.7,
+                    'release': 0.2
+                },
+                'rhythm': [1, 0.5, 1, 0, 0.7, 0.5, 0, 0.7],
+                'vibrato_rate': 5.0,
+                'vibrato_depth': 0.03
             },
             'percussion': {
-                'base_freq': 100.0,
-                'noise_mix': 0.3,
-                'decay_factor': 10.0,
-                'envelope': {'attack': 0.01, 'decay': 0.1, 'sustain': 0.0, 'release': 0.1},
-                'rhythm': [1, 0, 1, 0, 1, 0, 1, 0]
-            }
-        }
-        
-        # Map planet characteristics to instruments
-        self.planet_types = {
-            'small': {  # Small rocky planets
-                'instrument': 'pluck',
-                'size_range': (20, 35),
-                'scale': [0, 4, 7, 12]  # Major chord arpeggio
+                'base_freq': None,  # Uses noise instead of pitched sound
+                'noise_types': ['white', 'pink', 'metallic'],
+                'envelope': {
+                    'attack': 0.01,
+                    'decay': 0.1,
+                    'sustain': 0.0,
+                    'release': 0.1
+                },
+                'rhythm': [1, 0.7, 1, 0.7, 1, 0.7, 1, 0.7],
+                'filter_freq': 2000,
+                'resonance': 1.5
             },
-            'medium': {  # Earth-like planets
-                'instrument': 'pad',
-                'size_range': (35, 50),
-                'scale': [0, 3, 7]  # Minor chord
-            },
-            'large': {  # Gas giants
-                'instrument': 'bass',
-                'size_range': (50, 70),
-                'scale': [0, 5, 7]  # Power chord
-            },
-            'massive': {  # Super giants
-                'instrument': 'percussion',
-                'size_range': (70, 100),
-                'rhythm_emphasis': True
+            'ambient': {
+                'base_freq': self.root_note,
+                'waveform': 'sine',
+                'harmonics': [1.0, 0.4, 0.2],
+                'envelope': {
+                    'attack': 0.3,
+                    'decay': 0.4,
+                    'sustain': 0.8,
+                    'release': 0.5
+                },
+                'mod_freq': 0.5,
+                'mod_depth': 0.1,
+                'reverb_time': 2.0
             }
         }
 
-    def get_planet_type(self, planet):
-        """Determine planet type based on size and properties"""
-        for ptype, props in self.planet_types.items():
-            size_range = props['size_range']
-            if size_range[0] <= planet.size < size_range[1]:
-                return ptype
-        return 'medium'  # Default type
-
-    def generate_waveform(self, instrument_type, frequency, duration):
-        """Generate waveform based on instrument type"""
-        t = np.linspace(0, duration, int(self.sample_rate * duration), False)
-        wave = np.zeros_like(t)
-        instrument = self.instruments[instrument_type]
+    def _generate_scale(self, scale_type):
+        """Generate frequencies for a musical scale"""
+        # Semitone ratios for different scales
+        scales = {
+            'major': [0, 2, 4, 5, 7, 9, 11],
+            'minor': [0, 2, 3, 5, 7, 8, 10],
+            'pentatonic': [0, 2, 4, 7, 9]
+        }
         
-        if instrument_type == 'bass':
+        chosen_scale = scales.get(scale_type, scales['minor'])
+        frequencies = []
+        
+        for octave in range(2):  # Generate 2 octaves
+            for semitone in chosen_scale:
+                freq = self.root_note * (2 ** (octave + semitone/12))
+                frequencies.append(freq)
+                
+        return frequencies
+
+    def _generate_noise(self, duration, noise_type='white'):
+        """Generate different types of noise"""
+        num_samples = int(self.sample_rate * duration)
+        
+        if noise_type == 'white':
+            noise = np.random.normal(0, 1, num_samples)
+        elif noise_type == 'pink':
+            # Generate pink noise using 1/f spectrum
+            f = np.fft.fftfreq(num_samples)
+            f[0] = 1e-6  # Avoid division by zero
+            spectrum = 1 / np.sqrt(np.abs(f))
+            phase = np.random.uniform(0, 2*np.pi, num_samples)
+            noise = np.fft.ifft(spectrum * np.exp(1j*phase)).real
+        elif noise_type == 'metallic':
+            # Create metallic sound using filtered noise with resonant peaks
+            noise = np.random.normal(0, 1, num_samples)
+            resonant_freqs = [1000, 2000, 3000, 4000]
+            filtered_noise = np.zeros_like(noise)
+            for freq in resonant_freqs:
+                t = np.linspace(0, duration, num_samples)
+                filtered_noise += noise * np.sin(2 * np.pi * freq * t)
+            noise = filtered_noise
+            
+        return noise / np.max(np.abs(noise))
+
+    def _apply_envelope(self, wave, sound_type):
+        """Apply ADSR envelope to the wave"""
+        env = self.sound_types[sound_type]['envelope']
+        num_samples = len(wave)
+        
+        attack_samples = int(env['attack'] * self.sample_rate)
+        decay_samples = int(env['decay'] * self.sample_rate)
+        release_samples = int(env['release'] * self.sample_rate)
+        
+        envelope = np.ones(num_samples)
+        
+        # Attack
+        envelope[:attack_samples] = np.linspace(0, 1, attack_samples)
+        # Decay
+        decay_end = attack_samples + decay_samples
+        envelope[attack_samples:decay_end] = np.linspace(1, env['sustain'], decay_samples)
+        # Release
+        release_start = num_samples - release_samples
+        envelope[release_start:] = np.linspace(env['sustain'], 0, release_samples)
+        
+        return wave * envelope
+
+    def generate_sound(self, sound_type, planet_color):
+        """Generate a sound based on planet type and characteristics"""
+        duration = 2.0  # Base duration for all sounds
+        type_info = self.sound_types[sound_type]
+        
+        # Use planet color to influence sound parameters
+        color_value = sum(planet_color) / (255 * 3)  # 0 to 1
+        
+        if sound_type == 'bass':
             # Generate rich bass tone with harmonics
-            for i, amplitude in enumerate(instrument['harmonics']):
-                wave += amplitude * np.sin(2 * np.pi * frequency * (i + 1) * t)
-        
-        elif instrument_type == 'pad':
-            # Generate pad sound with frequency modulation
-            mod = instrument['mod_depth'] * np.sin(2 * np.pi * instrument['mod_freq'] * t)
-            wave = np.sin(2 * np.pi * frequency * t + mod)
-        
-        elif instrument_type == 'pluck':
-            # Generate pluck sound with quick decay
-            wave = np.sin(2 * np.pi * frequency * t)
-            wave *= np.exp(-instrument['decay_factor'] * t)
-        
-        elif instrument_type == 'percussion':
-            # Generate percussion with noise mix
-            sine = np.sin(2 * np.pi * frequency * t)
-            noise = np.random.normal(0, 1, len(t))
-            wave = (1 - instrument['noise_mix']) * sine + instrument['noise_mix'] * noise
-            wave *= np.exp(-instrument['decay_factor'] * t)
+            wave = np.zeros(int(self.sample_rate * duration))
+            base_freq = type_info['base_freq'] * (0.9 + color_value * 0.2)
+            
+            for i, amplitude in enumerate(type_info['harmonics']):
+                t = np.linspace(0, duration, int(self.sample_rate * duration))
+                wave += amplitude * np.sin(2 * np.pi * base_freq * (i + 1) * t)
+                
+        elif sound_type == 'melody':
+            # Generate melodic sound with vibrato
+            t = np.linspace(0, duration, int(self.sample_rate * duration))
+            freq = type_info['base_freq'] * (1 + color_value * 0.5)
+            vibrato = type_info['vibrato_depth'] * np.sin(2 * np.pi * type_info['vibrato_rate'] * t)
+            wave = np.sin(2 * np.pi * freq * t + vibrato)
+            
+        elif sound_type == 'percussion':
+            # Generate percussion sound with filtered noise
+            wave = self._generate_noise(duration, random.choice(type_info['noise_types']))
+            
+        elif sound_type == 'ambient':
+            # Generate ambient pad sound with frequency modulation
+            t = np.linspace(0, duration, int(self.sample_rate * duration))
+            freq = type_info['base_freq'] * (0.8 + color_value * 0.4)
+            mod = type_info['mod_depth'] * np.sin(2 * np.pi * type_info['mod_freq'] * t)
+            wave = np.sin(2 * np.pi * freq * t + mod)
+            
+            # Add subtle chorus effect
+            chorus = np.sin(2 * np.pi * (freq * 1.01) * t + mod)
+            wave = 0.7 * wave + 0.3 * chorus
         
         # Apply envelope
-        env = instrument['envelope']
-        envelope = np.ones_like(t)
-        attack = int(env['attack'] * self.sample_rate)
-        decay = int(env['decay'] * self.sample_rate)
-        release = int(env['release'] * self.sample_rate)
+        wave = self._apply_envelope(wave, sound_type)
         
-        envelope[:attack] = np.linspace(0, 1, attack)
-        envelope[attack:attack + decay] = np.linspace(1, env['sustain'], decay)
-        envelope[-release:] = np.linspace(env['sustain'], 0, release)
-        
-        wave = wave * envelope * self.volume
-        
-        # Convert to 16-bit integers
+        # Convert to 16-bit integers and create stereo sound
         wave = np.int16(wave * 32767)
-        return pygame.sndarray.make_sound(np.column_stack((wave, wave)))
+        stereo_wave = np.column_stack((wave, wave))
+        
+        return pygame.sndarray.make_sound(stereo_wave)
 
     def play_planet_sound(self, planet):
-        """Toggle planet sound on/off"""
+        """Play or stop planet sound"""
         try:
-            planet_type = self.get_planet_type(planet)
-            instrument_type = self.planet_types[planet_type]['instrument']
-            
             if planet in self.active_sounds:
-                # Stop the sound if it's already playing
-                self.active_sounds[planet].stop()
+                self.active_sounds[planet]['sound'].stop()
                 del self.active_sounds[planet]
                 planet.is_playing = False
             else:
-                # Generate and play the sound
-                base_freq = self.instruments[instrument_type]['base_freq']
-                # Modify frequency based on planet color
-                color_mod = sum(planet.base_color) / (255 * 3)
-                frequency = base_freq * (0.8 + 0.4 * color_mod)
-                
-                sound = self.generate_waveform(instrument_type, frequency, 2.0)
+                sound = self.generate_sound(planet.sound_type, planet.base_color)
                 sound.set_volume(self.volume)
                 sound.play(-1)  # Loop the sound
-                self.active_sounds[planet] = sound
+                
+                self.active_sounds[planet] = {
+                    'sound': sound,
+                    'type': planet.sound_type
+                }
                 planet.is_playing = True
                 
         except Exception as e:
             print(f"Error playing planet sound: {e}")
 
-    def update_rhythms(self):
-        """Update rhythm patterns for active sounds"""
-        current_tick = (pygame.time.get_ticks() // 250) % 8  # 250ms per beat
+    def update(self):
+        """Update playing sounds and handle beat synchronization"""
+        current_time = pygame.time.get_ticks()
         
-        for planet, sound in self.active_sounds.items():
-            planet_type = self.get_planet_type(planet)
-            instrument_type = self.planet_types[planet_type]['instrument']
+        # Check for beat
+        if current_time - self.last_beat_time >= self.beat_length:
+            self.last_beat_time = current_time
+            self.beat_count = (self.beat_count + 1) % 8
             
-            if 'rhythm' in self.instruments[instrument_type]:
-                rhythm = self.instruments[instrument_type]['rhythm']
-                if rhythm[current_tick]:
-                    sound.set_volume(self.volume)
-                else:
-                    sound.set_volume(0)
+            # Update volumes based on rhythm patterns
+            for planet, sound_info in self.active_sounds.items():
+                sound_type = sound_info['type']
+                if 'rhythm' in self.sound_types[sound_type]:
+                    rhythm = self.sound_types[sound_type]['rhythm']
+                    volume = rhythm[self.beat_count] * self.volume
+                    sound_info['sound'].set_volume(volume)
 
     def stop_all_sounds(self):
         """Stop all playing sounds"""
-        for sound in self.active_sounds.values():
-            sound.stop()
+        for sound_info in self.active_sounds.values():
+            sound_info['sound'].stop()
         self.active_sounds.clear()
 
     def set_volume(self, value):
         """Set master volume"""
         self.volume = max(0.0, min(1.0, value))
-        for sound in self.active_sounds.values():
-            sound.set_volume(self.volume)
+        for sound_info in self.active_sounds.values():
+            sound_info['sound'].set_volume(self.volume)
 
     def play_startup_sound(self):
-        """Play a startup sound"""
-        pad_sound = self.generate_waveform('pad', 
-            self.instruments['pad']['base_freq'], 1.5)
-        pad_sound.set_volume(self.volume)
-        pad_sound.play()
+        """Play an engaging startup sound"""
+        duration = 1.5
+        t = np.linspace(0, duration, int(self.sample_rate * duration))
+        
+        # Create a rising arpeggio
+        frequencies = [self.root_note * (2 ** (i/12)) for i in [0, 4, 7, 12]]
+        wave = np.zeros_like(t)
+        
+        for i, freq in enumerate(frequencies):
+            start = int((i/len(frequencies)) * len(t))
+            wave[start:] += 0.5 * np.sin(2 * np.pi * freq * t[:-start])
+        
+        # Apply envelope
+        envelope = np.exp(-3 * t/duration)
+        wave = wave * envelope
+        
+        # Convert and play
+        wave = np.int16(wave * 32767)
+        stereo_wave = np.column_stack((wave, wave))
+        sound = pygame.sndarray.make_sound(stereo_wave)
+        sound.set_volume(self.volume)
+        sound.play()
 
     def play_completion_melody(self):
-        """Play a completion melody"""
-        base_freq = self.instruments['pluck']['base_freq']
-        intervals = [0, 4, 7, 12]  # Major scale intervals
-        for i, interval in enumerate(intervals):
-            freq = base_freq * (2 ** (interval/12))
-            sound = self.generate_waveform('pluck', freq, 0.3)
+        """Play a satisfying completion melody"""
+        duration = 0.2
+        melody_notes = [0, 4, 7, 12]  # Major chord arpeggio
+        
+        for i, semitones in enumerate(melody_notes):
+            t = np.linspace(0, duration, int(self.sample_rate * duration))
+            freq = self.root_note * (2 ** (semitones/12))
+            
+            # Generate a pleasant bell-like tone
+            wave = np.sin(2 * np.pi * freq * t)
+            wave += 0.3 * np.sin(2 * 2 * np.pi * freq * t)
+            wave += 0.2 * np.sin(3 * 2 * np.pi * freq * t)
+            
+            # Apply envelope
+            envelope = np.exp(-5 * t/duration)
+            wave = wave * envelope
+            
+            # Convert and play
+            wave = np.int16(wave * 32767)
+            stereo_wave = np.column_stack((wave, wave))
+            sound = pygame.sndarray.make_sound(stereo_wave)
             sound.set_volume(self.volume)
-            pygame.time.delay(i * 200)
+            pygame.time.delay(i * 200)  # Delay between notes
             sound.play()

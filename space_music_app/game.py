@@ -4,38 +4,23 @@ import random
 from planet import Planet
 
 class Game:
-    def __init__(self, screen, sound_manager, level):
+    def __init__(self, screen, sound_manager, result):
         self.screen = screen
         self.sound_manager = sound_manager
-        self.level = level
+        self.level = result
         self.planets = []
         
         # Create background stars
         self.stars = [(random.randint(0, 800), random.randint(0, 600), 
                       random.random()) for _ in range(200)]
         
-        # Level completion criteria
+        # Level settings
         self.required_active_planets = 3
         self.min_play_time = 10000  # 10 seconds
         self.start_time = None
         
         self.generate_planets()
-    
-    def generate_planets(self):
-        """Generate planets for the current level"""
-        num_planets = min(3 + self.level, 8)  # More planets in higher levels
-        positions = self.generate_positions(num_planets)
-        
-        for pos in positions:
-            # Randomize planet properties
-            size = random.randint(30, 80)
-            color = (random.randint(100, 255), 
-                    random.randint(100, 255), 
-                    random.randint(100, 255))
-                    
-            planet = Planet(pos[0], pos[1], size, color)
-            self.planets.append(planet)
-    
+
     def generate_positions(self, num_planets):
         """Generate non-overlapping positions for planets"""
         positions = []
@@ -61,7 +46,22 @@ class Game:
                 max_attempts -= 1
         
         return positions
-    
+
+    def generate_planets(self):
+        """Generate planets for the current level"""
+        num_planets = min(3 + self.level, 8)  # More planets in higher levels
+        positions = self.generate_positions(num_planets)
+        
+        for pos in positions:
+            # Randomize planet properties
+            size = random.randint(30, 80)
+            color = (random.randint(100, 255), 
+                    random.randint(100, 255), 
+                    random.randint(100, 255))
+                    
+            planet = Planet(pos[0], pos[1], size, color)
+            self.planets.append(planet)
+
     def draw_background(self):
         """Draw space background with stars"""
         self.screen.fill((0, 0, 20))  # Dark blue background
@@ -69,7 +69,7 @@ class Game:
             color = int(255 * brightness)
             pygame.draw.circle(self.screen, (color, color, color), 
                              (int(x), int(y)), 1)
-    
+
     def draw_interface(self):
         """Draw game interface elements"""
         font = pygame.font.Font(None, 36)
@@ -93,7 +93,7 @@ class Game:
                 True, (200, 200, 255))
             instruction_rect = instruction_text.get_rect(center=(400, 550))
             self.screen.blit(instruction_text, instruction_rect)
-    
+
     def check_completion(self):
         """Check if level completion criteria are met"""
         if self.start_time is None:
@@ -104,15 +104,23 @@ class Game:
         
         return (active_count >= self.required_active_planets and 
                 time_elapsed >= self.min_play_time)
-    
+
+    def cleanup_level(self):
+        """Clean up resources when level is completed"""
+        self.sound_manager.stop_all_sounds()
+        for planet in self.planets:
+            planet.is_playing = False
+
     def run(self):
         """Main game loop"""
         while True:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
+                    self.cleanup_level()
                     return "quit"
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
+                        self.cleanup_level()
                         return "menu"
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     for planet in self.planets:
@@ -132,6 +140,7 @@ class Game:
             
             # Check level completion
             if self.check_completion():
+                self.cleanup_level()
                 self.sound_manager.play_completion_melody()
                 pygame.time.delay(1000)  # Wait for completion melody
                 return ("level_complete", self.level)
