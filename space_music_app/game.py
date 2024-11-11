@@ -21,6 +21,27 @@ class Game:
         
         self.generate_planets()
 
+    def draw_background(self):
+        """Draw space background with stars"""
+        self.screen.fill((0, 0, 20))  # Dark blue background
+        
+        # Draw stars with twinkling effect
+        for x, y, brightness in self.stars:
+            # Add subtle twinkling
+            flicker = random.uniform(0.8, 1.2)
+            color = int(255 * brightness * flicker)
+            color = max(0, min(255, color))  # Clamp between 0 and 255
+            
+            pygame.draw.circle(self.screen, (color, color, color), 
+                             (int(x), int(y)), 1)
+            
+            # Add occasional larger stars
+            if brightness > 0.8:  # Brighter stars get a glow
+                glow_radius = 2
+                glow_color = (color // 4, color // 4, color // 4)
+                pygame.draw.circle(self.screen, glow_color, 
+                                 (int(x), int(y)), glow_radius)
+
     def generate_positions(self, num_planets):
         """Generate non-overlapping positions for planets"""
         positions = []
@@ -61,14 +82,6 @@ class Game:
                     
             planet = Planet(pos[0], pos[1], size, color)
             self.planets.append(planet)
-
-    def draw_background(self):
-        """Draw space background with stars"""
-        self.screen.fill((0, 0, 20))  # Dark blue background
-        for x, y, brightness in self.stars:
-            color = int(255 * brightness)
-            pygame.draw.circle(self.screen, (color, color, color), 
-                             (int(x), int(y)), 1)
 
     def draw_interface(self):
         """Draw game interface elements"""
