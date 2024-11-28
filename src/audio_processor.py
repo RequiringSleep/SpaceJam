@@ -18,7 +18,7 @@ class AudioProcessor:
         
         self.CHUNK = 1024
         self.RATE = 44100
-        self.CHANNELS = 1
+        self.CHANNELS = 2  # Changed to stereo
         
         self.volume = 0
         self.is_active = False
@@ -36,6 +36,10 @@ class AudioProcessor:
     def audio_callback(self, indata, frames, time_info, status):
         if status:
             return
+        
+        # Convert stereo to mono by averaging channels    
+        if indata.shape[1] == 2:
+            indata = np.mean(indata, axis=1)
             
         volume_norm = np.sqrt(np.mean(indata**2))
         current_time = time.time()
@@ -53,7 +57,6 @@ class AudioProcessor:
                 self.peaks.append(current_time)
                 self.last_peak_time = current_time
             
-            # Clean old peaks
             self.peaks = [t for t in self.peaks if current_time - t < 1.0]
 
     def start(self):
