@@ -1,4 +1,4 @@
-# sound_manager.py
+from typing import Self
 import pygame
 import numpy as np
 from pygame import mixer
@@ -18,53 +18,45 @@ class SoundManager:
             sound.set_volume(self.volume)
 
     def _generate_select_sound(self):
-        duration = 0.15
-        samples = int(self.sample_rate * duration)
-        t = np.linspace(0, duration, samples)
-        freq1, freq2 = 440, 880
-        wave = 0.3 * np.sin(2 * np.pi * freq1 * t) + 0.2 * np.sin(2 * np.pi * freq2 * t)
-        envelope = np.exp(-8 * t)
-        wave = wave * envelope
-        return self._create_sound(wave)
-
-    def _generate_start_sound(self):
-        duration = 0.4
-        samples = int(self.sample_rate * duration)
-        t = np.linspace(0, duration, samples)
-        freq = np.linspace(300, 600, samples)
-        wave = 0.4 * np.sin(2 * np.pi * freq * t)
-        wave += 0.2 * np.sin(4 * np.pi * freq * t)
-        envelope = np.exp(-2 * t)
-        wave = wave * envelope
-        return self._create_sound(wave)
-
-    def _generate_stop_sound(self):
-        duration = 0.4
-        samples = int(self.sample_rate * duration)
-        t = np.linspace(0, duration, samples)
-        freq = np.linspace(600, 300, samples)
-        wave = 0.4 * np.sin(2 * np.pi * freq * t)
-        wave += 0.2 * np.sin(4 * np.pi * freq * t)
-        envelope = np.exp(-2 * t)
-        wave = wave * envelope
-        return self._create_sound(wave)
-
-    def _generate_transition_sound(self):
         duration = 0.3
         samples = int(self.sample_rate * duration)
         t = np.linspace(0, duration, samples)
-        freq1, freq2 = 440, 660
-        wave = 0.3 * np.sin(2 * np.pi * np.linspace(freq1, freq2, samples) * t)
+        freq1, freq2 = 523, 784  # C5, G5
+        wave = 0.3 * np.sin(2 * np.pi * freq1 * t) + 0.2 * np.sin(2 * np.pi * freq2 * t)
+        envelope = np.sin(np.pi * t / duration) * np.exp(-2 * t)
+        return self._create_sound(wave * envelope)
+
+    def _generate_start_sound(self):
+        duration = 0.6
+        samples = int(self.sample_rate * duration)
+        t = np.linspace(0, duration, samples)
+        freq = np.linspace(392, 587, samples)  # G4 to D5
+        wave = 0.4 * np.sin(2 * np.pi * freq * t) + 0.2 * np.sin(4 * np.pi * freq * t)
         envelope = np.sin(np.pi * t / duration)
-        wave = wave * envelope
-        return self._create_sound(wave)
+        return self._create_sound(wave * envelope)
+
+    def _generate_stop_sound(self):
+        duration = 0.6
+        samples = int(self.sample_rate * duration)
+        t = np.linspace(0, duration, samples)
+        freq = np.linspace(587, 392, samples)  # D5 to G4
+        wave = 0.4 * np.sin(2 * np.pi * freq * t) + 0.2 * np.sin(4 * np.pi * freq * t)
+        envelope = np.sin(np.pi * t / duration)
+        return self._create_sound(wave * envelope)
+
+    def _generate_transition_sound(self):
+        duration = 0.4
+        samples = int(self.sample_rate * duration)
+        t = np.linspace(0, duration, samples)
+        freq1, freq2 = 523, 698  # C5, F5
+        wave = 0.3 * np.sin(2 * np.pi * np.linspace(freq1, freq2, samples) * t)
+        envelope = np.sin(np.pi * t / duration) ** 2
+        return self._create_sound(wave * envelope)
 
     def _create_sound(self, wave):
-        # Normalize to 16-bit range
         normalized = wave / (np.max(np.abs(wave)) + 1e-6)
         samples = np.int16(normalized * 32767)
         
-        # Create stereo array with correct shape (samples, 2)
         stereo = np.empty((len(samples), 2), dtype=np.int16)
         stereo[:, 0] = samples
         stereo[:, 1] = samples
